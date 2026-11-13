@@ -1,0 +1,98 @@
+services:
+  # MySQL remains private; it is never exposed to the public Internet.
+  - type: pserv
+    runtime: docker
+    name: football-mysql
+    region: singapore
+    plan: 0.5c-512mb
+    dockerfilePath: ./Dockerfile.mysql
+    dockerContext: .
+    disk:
+      name: mysql-data
+      mountPath: /var/lib/mysql
+      sizeGB: 10
+    envVars:
+      - key: MYSQL_ROOT_PASSWORD
+        generateValue: true
+      - key: BOOKING_DB_PASSWORD
+        generateValue: true
+      - key: PRICING_DB_PASSWORD
+        generateValue: true
+      - key: TZ
+        value: UTC
+
+  - type: keyvalue
+    name: football-redis
+    region: singapore
+    plan: free
+    ipAllowList: []
+    maxmemoryPolicy: noeviction
+
+  # gRPC is internal-only. The public API is the only service exposed externally.
+  - type: pserv
+    runtime: docker
+    name: football-pricing
+    region: singapore
+    plan: free
+    dockerfilePath: ./Dockerfile.pricing
+    dockerContext: .
+    envVars:
+      - key: Database__Host
+        fromService: { type: pserv, name: football-mysql, property: host }
+      - key: Database__Port
+        fromService: { type: pserv, name: football-mysql, property: port }
+      - key: Database__PricingPassword
+        fromService: { type: pserv, name: football-mysql, envVarKey: PRICING_DB_PASSWORD }
+
+  - type: web
+    runtime: docker
+    name: football-api
+    region: singapore
+    plan: free
+    healthCheckPath: /health
+    dockerfilePath: ./Dockerfile.api
+    dockerContext: .
+    envVars:
+      - key: ASPNETCORE_URLS
+        value: http://+:10000
+      - key: Database__Host
+        fromService: { type: pserv, name: football-mysql, property: host }
+      - key: Database__Port
+        fromService: { type: pserv, name: football-mysql, property: port }
+      - key: Database__BookingPassword
+        fromService: { type: pserv, name: football-mysql, envVarKey: BOOKING_DB_PASSWORD }
+      - key: Pricing__HostPort
+        fromService: { type: pserv, name: football-pricing, property: hostport }
+      - key: Jwt__Key
+        generateValue: true
+      - key: BootstrapAdmin__Email
+        value: admin@example.test
+      - key: BootstrapAdmin__Password
+        sync: false
+      - key: Web__Origin
+        sync: false
+      - key: Sepay__Bank
+        value: Sacombank
+      - key: Sepay__AccountNumber
+        sync: false
+      - key: Sepay__WebhookKey
+        sync: false
+
+  - type: worker
+    runtime: docker
+    name: football-worker
+    region: singapore
+    plan: free
+    dockerfilePath: ./Dockerfile.api
+    dockerContext: .
+    envVars:
+      - key: RunMode
+        value: Worker
+      - key: Database__Host
+        fromService: { type: pserv, name: football-mysql, property: host }
+      - key: Database__Port
+        fromService: { type: pserv, name: football-mysql, property: port }
+      - key: Database__BookingPassword
+        fromService: { type: pserv, name: football-mysql, envVarKey: BOOKING_DB_PASSWORD }
+      - key: ConnectionStrings__Redis
+        fromService: { type: keyvalue, name: football-redis, property: connectionString }
