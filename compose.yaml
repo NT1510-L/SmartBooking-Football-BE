@@ -1,0 +1,75 @@
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in .env}
+      BOOKING_DB_PASSWORD: ${BOOKING_DB_PASSWORD:?Set BOOKING_DB_PASSWORD in .env}
+      PRICING_DB_PASSWORD: ${PRICING_DB_PASSWORD:?Set PRICING_DB_PASSWORD in .env}
+      TZ: UTC
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./database/01-booking.sql:/docker-entrypoint-initdb.d/01-booking.sql:ro
+      - ./database/02-pricing.sql:/docker-entrypoint-initdb.d/02-pricing.sql:ro
+      - ./database/03-sepay.sql:/docker-entrypoint-initdb.d/03-sepay.sql:ro
+      - ./database/04-pitch-capacity.sql:/docker-entrypoint-initdb.d/04-pitch-capacity.sql:ro
+      - ./database/05-camel-case-naming.sql:/docker-entrypoint-initdb.d/05-camel-case-naming.sql:ro
+      - ./database/06-demo-data.sql:/docker-entrypoint-initdb.d/06-demo-data.sql:ro
+      - ./docker/init-db-users.sh:/docker-entrypoint-initdb.d/05-app-users.sh:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'mysql -h 127.0.0.1 -ubooking_app -p"$$BOOKING_DB_PASSWORD" -e "SELECT id FROM booking_db.payments LIMIT 1" && mysql -h 127.0.0.1 -upricing_app -p"$$PRICING_DB_PASSWORD" -e "SELECT id FROM pricing_db.pricing_policies LIMIT 1"']
+      interval: 5s
+      timeout: 4s
+      retries: 30
+  redis:
+    image: redis:7-alpine
+    command: ['redis-server', '--appendonly', 'yes']
+    volumes:
+      - redis_data:/data
+  pricing:
+    build:
+      context: .
+      args: { PROJECT: Pricing }
+    environment:
+      ConnectionStrings__Pricing: Server=mysql;Database=pricing_db;User ID=pricing_app;Password=${PRICING_DB_PASSWORD};DateTimeKind=Utc
+    depends_on:
+      mysql: { condition: service_healthy }
+  api:
+    build:
+      context: .
+      args: { PROJECT: Football_Booking }
+    environment:
+      ConnectionStrings__Booking: Server=mysql;Database=booking_db;User ID=booking_app;Password=${BOOKING_DB_PASSWORD};DateTimeKind=Utc
+      ASPNETCORE_URLS: http://+:8080
+      Jwt__Key: ${JWT_KEY:?Set JWT_KEY in .env}
+      BootstrapAdmin__Email: ${ADMIN_EMAIL:-}
+      BootstrapAdmin__Password: ${ADMIN_PASSWORD:-}
+      Pricing__Address: http://pricing:5081
+      Sepay__Bank: ${SEPAY_BANK:-}
+      Sepay__AccountNumber: ${SEPAY_ACCOUNT_NUMBER:-}
+      Sepay__WebhookKey: ${SEPAY_WEBHOOK_KEY:-}
+    depends_on:
+      mysql: { condition: service_healthy }
+      pricing: { condition: service_started }
+    ports:
+      - '127.0.0.1:5045:8080'
+  worker:
+    build:
+      context: .
+      args: { PROJECT: Football_Booking }
+    environment:
+      RunMode: Worker
+      ConnectionStrings__Booking: Server=mysql;Database=booking_db;User ID=booking_app;Password=${BOOKING_DB_PASSWORD};DateTimeKind=Utc
+      ConnectionStrings__Redis: redis:6379
+    depends_on:
+      mysql: { condition: service_healthy }
+      redis: { condition: service_started }
+  web:
+    build: ../SmartBooking-Football-FE
+    depends_on:
+      - api
+    ports:
+      - '127.0.0.1:5173:80'
+
+volumes:
+  mysql_data:
+  redis_data:

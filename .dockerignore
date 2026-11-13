@@ -1,0 +1,6 @@
+.git
+.artifacts
+.env
+**/bin
+**/obj
+**/.vs

@@ -1,0 +1,6 @@
+@Football_Booking_HostAddress = http://localhost:5045
+
+GET {{Football_Booking_HostAddress}}/api/branches
+Accept: application/json
+
+###
