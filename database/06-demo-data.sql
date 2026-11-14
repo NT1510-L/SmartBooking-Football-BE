@@ -36,7 +36,7 @@ INSERT INTO pitches (branchId, pitchNumber, name, isActive) VALUES
 (@quan7Id, 3, 'Sân 7 người', TRUE), (@quan7Id, 4, 'Sân 11 người', TRUE);
 
 USE pricing_db;
-INSERT INTO pricingPolicies (branchId, effectiveFrom, regularPriceVnd, peakPriceVnd, peakStartHour, peakEndHour) VALUES
+INSERT INTO pricingpolicies (branchId, effectiveFrom, regularPriceVnd, peakPriceVnd, peakStartHour, peakEndHour) VALUES
 (@thuDucId, '2026-01-01', 220000, 300000, 18, 22),
 (@tanBinhId, '2026-01-01', 250000, 340000, 18, 22),
 (@quan7Id, '2026-01-01', 280000, 380000, 18, 22);

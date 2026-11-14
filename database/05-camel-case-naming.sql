@@ -105,4 +105,4 @@ ALTER TABLE pricing_policies
 ALTER TABLE pricing_policies
     ADD CONSTRAINT ck_pricing_prices CHECK (regularPriceVnd >= 0 AND peakPriceVnd >= regularPriceVnd),
     ADD CONSTRAINT ck_pricing_peak_hours CHECK (peakStartHour < peakEndHour AND peakEndHour <= 24);
-RENAME TABLE pricing_policies TO pricingPolicies;
+RENAME TABLE pricing_policies TO pricingpolicies;

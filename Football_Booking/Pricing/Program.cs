@@ -45,7 +45,7 @@ sealed class PricingDb(DbContextOptions<PricingDb> options) : DbContext(options)
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
-        var policy = builder.Entity<PricePolicy>().ToTable("pricingPolicies");
+        var policy = builder.Entity<PricePolicy>().ToTable("pricingpolicies");
         policy.Property(x => x.Id).HasColumnName("id");
         policy.Property(x => x.BranchId).HasColumnName("branchId");
         policy.Property(x => x.EffectiveFrom).HasColumnName("effectiveFrom");
