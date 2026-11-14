@@ -23,7 +23,8 @@ var connectionOptions = new MySqlConnector.MySqlConnectionStringBuilder(connecti
     DateTimeKind = MySqlConnector.MySqlDateTimeKind.Utc
 };
 builder.Services.AddDbContext<BookingDb>(options =>
-    options.UseMySql(connectionOptions.ConnectionString, new MySqlServerVersion(new Version(8, 0, 46))));
+    options.UseMySql(connectionOptions.ConnectionString, new MySqlServerVersion(new Version(8, 0, 46)),
+        mysql => mysql.EnableRetryOnFailure()));
 builder.Services.AddScoped<BookingRepository>();
 if (config["RunMode"] == "Worker")
 {

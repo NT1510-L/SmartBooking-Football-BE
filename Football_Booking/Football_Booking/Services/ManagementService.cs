@@ -168,5 +168,8 @@ public sealed class ManagementService(BookingRepository repo, PricingService.Pri
         actor.IsInRole("Admin") || await repo.Manages(Id(actor), branchId, ct);
     private static int PageSize(int? size) => Math.Clamp(size ?? 20, 1, 100);
     private static int Offset(int? page, int? size) => (Math.Clamp(page ?? 1, 1, 10000) - 1) * PageSize(size);
-    private static DateTime Deadline() => DateTime.UtcNow.AddSeconds(5);
+    // Aiven connections may take a few seconds while a connection pool is cold.
+    // Keep this aligned with booking quotes so the API does not cancel a healthy
+    // Pricing request prematurely.
+    private static DateTime Deadline() => DateTime.UtcNow.AddSeconds(15);
 }

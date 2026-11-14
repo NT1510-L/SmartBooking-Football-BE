@@ -9,7 +9,8 @@ builder.Configuration.AddJsonFile("appsettings.Development.Local.json", optional
 builder.WebHost.ConfigureKestrel(options => options.ListenAnyIP(
     builder.Configuration.GetValue("PricingPort", 5081), endpoint => endpoint.Protocols = HttpProtocols.Http1AndHttp2));
 var connection = ResolveMySqlConnection(builder.Configuration);
-builder.Services.AddDbContext<PricingDb>(options => options.UseMySql(connection, new MySqlServerVersion(new Version(8, 0, 46))));
+builder.Services.AddDbContext<PricingDb>(options => options.UseMySql(connection,
+    new MySqlServerVersion(new Version(8, 0, 46)), mysql => mysql.EnableRetryOnFailure()));
 builder.Services.AddGrpc();
 var app = builder.Build();
 app.UseGrpcWeb();
