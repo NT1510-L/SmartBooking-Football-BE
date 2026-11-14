@@ -4,6 +4,7 @@ using Football_Booking.Api;
 using Football_Booking.Repositories;
 using Football_Booking.Services;
 using Grpc.Core;
+using Grpc.Net.Client.Web;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -44,7 +45,8 @@ builder.Services.AddScoped<ManagementService>();
 builder.Services.AddScoped<IPasswordHasher<Account>, PasswordHasher<Account>>();
 builder.Services.AddGrpcClient<PricingService.PricingServiceClient>(o =>
     o.Address = new Uri(config["Pricing:Address"]
-        ?? (config["Pricing:HostPort"] is { Length: > 0 } hostPort ? $"http://{hostPort}" : "http://localhost:5081")));
+        ?? (config["Pricing:HostPort"] is { Length: > 0 } hostPort ? $"http://{hostPort}" : "http://localhost:5081")))
+    .ConfigurePrimaryHttpMessageHandler(() => new GrpcWebHandler(GrpcWebMode.GrpcWeb, new HttpClientHandler()));
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(options =>
 {
     options.MapInboundClaims = false;

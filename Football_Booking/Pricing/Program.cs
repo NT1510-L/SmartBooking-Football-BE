@@ -7,12 +7,13 @@ using SmartBooking.Pricing;
 var builder = WebApplication.CreateBuilder(args);
 builder.Configuration.AddJsonFile("appsettings.Development.Local.json", optional: true, reloadOnChange: true);
 builder.WebHost.ConfigureKestrel(options => options.ListenAnyIP(
-    builder.Configuration.GetValue("PricingPort", 5081), endpoint => endpoint.Protocols = HttpProtocols.Http2));
+    builder.Configuration.GetValue("PricingPort", 5081), endpoint => endpoint.Protocols = HttpProtocols.Http1AndHttp2));
 var connection = ResolveMySqlConnection(builder.Configuration);
 builder.Services.AddDbContext<PricingDb>(options => options.UseMySql(connection, new MySqlServerVersion(new Version(8, 0, 46))));
 builder.Services.AddGrpc();
 var app = builder.Build();
-app.MapGrpcService<PricingEndpoint>();
+app.UseGrpcWeb();
+app.MapGrpcService<PricingEndpoint>().EnableGrpcWeb();
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 app.Run();
 
