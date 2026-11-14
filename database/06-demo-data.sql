@@ -24,7 +24,7 @@ SET @managerThuDuc = (SELECT id FROM users WHERE email = 'manager.thuduc@smartbo
 SET @managerTanBinh = (SELECT id FROM users WHERE email = 'manager.tanbinh@smartbooking.demo');
 SET @managerQuan7 = (SELECT id FROM users WHERE email = 'manager.quan7@smartbooking.demo');
 
-INSERT INTO branchManagers (managerId, branchId) VALUES
+INSERT INTO branchmanagers (managerId, branchId) VALUES
 (@managerThuDuc, @thuDucId), (@managerTanBinh, @tanBinhId), (@managerQuan7, @quan7Id);
 
 INSERT INTO pitches (branchId, pitchNumber, name, isActive) VALUES

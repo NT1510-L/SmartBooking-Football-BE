@@ -25,7 +25,7 @@ ALTER TABLE pitches ADD CONSTRAINT ck_pitch_number_positive CHECK (pitchNumber >
 ALTER TABLE branch_managers
     RENAME COLUMN manager_id TO managerId,
     RENAME COLUMN branch_id TO branchId;
-RENAME TABLE branch_managers TO branchManagers;
+RENAME TABLE branch_managers TO branchmanagers;
 
 ALTER TABLE bookings
     DROP CHECK ck_booking_slot_hour,
@@ -73,7 +73,7 @@ ALTER TABLE payment_receipts
     RENAME COLUMN payment_id TO paymentId,
     RENAME COLUMN amount_vnd TO amountVnd,
     RENAME COLUMN received_at_utc TO receivedAt;
-RENAME TABLE payment_receipts TO paymentReceipts;
+RENAME TABLE payment_receipts TO paymentreceipts;
 
 ALTER TABLE outbox_messages
     RENAME COLUMN event_id TO eventId,
@@ -81,7 +81,7 @@ ALTER TABLE outbox_messages
     RENAME COLUMN event_type TO eventType,
     RENAME COLUMN occurred_at_utc TO occurredAt,
     RENAME COLUMN published_at_utc TO publishedAt;
-RENAME TABLE outbox_messages TO outboxMessages;
+RENAME TABLE outbox_messages TO outboxmessages;
 
 ALTER TABLE notifications
     RENAME COLUMN user_id TO userId,

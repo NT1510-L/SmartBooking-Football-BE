@@ -75,7 +75,7 @@ public sealed class Pitch
     public bool IsActive { get; set; } = true;
 }
 
-[Table("branchManagers")]
+[Table("branchmanagers")]
 public sealed class Assignment
 {
     public long ManagerId { get; set; }
@@ -110,7 +110,7 @@ public sealed class Payment
     public DateTime? PaidAtUtc { get; set; }
 }
 
-[Table("paymentReceipts")]
+[Table("paymentreceipts")]
 public sealed class Receipt
 {
     public long SepayId { get; set; }
@@ -120,7 +120,7 @@ public sealed class Receipt
     public DateTime ReceivedAtUtc { get; set; }
 }
 
-[Table("outboxMessages")]
+[Table("outboxmessages")]
 public sealed class Outbox
 {
     public string EventId { get; set; } = Guid.NewGuid().ToString();
