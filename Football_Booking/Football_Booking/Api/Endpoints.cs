@@ -69,6 +69,12 @@ public static class Endpoints
             service.UnassignManager(id, ct));
 
         var ops = api.MapGroup("/management").RequireAuthorization("Staff");
+        ops.MapGet("/bookings", (BookingQueryService service, ClaimsPrincipal actor, long? branchId, string? status, DateOnly? date, string? sort, int? page, int? size, CancellationToken ct) =>
+            service.ListBookings(actor, branchId, status, date, sort, page, size, ct))
+            .WithTags("Manager/Admin - Bookings");
+        ops.MapGet("/bookings/{id:long}", (BookingQueryService service, long id, ClaimsPrincipal actor, CancellationToken ct) =>
+            service.GetBooking(id, actor, ct))
+            .WithTags("Manager/Admin - Bookings");
         var managerBranches = ops.MapGroup("/branches").WithTags("Manager/Admin - Branches");
         managerBranches.MapGet("", (ManagementService service, ClaimsPrincipal actor, CancellationToken ct) =>
             service.ListManagedBranches(actor, ct));

@@ -28,9 +28,9 @@ public sealed class BookingQueryService(BookingRepository repo, BookingService b
         var first = BookingService.ToUtc(date, 0);
         var next = first.AddDays(1);
         var now = DateTime.UtcNow;
-        var occupied = await repo.Bookings.Where(x => x.PitchId == id && x.StartAtUtc >= first && x.StartAtUtc < next &&
+        var occupied = (await repo.Bookings.AsNoTracking().Where(x => x.PitchId == id && x.StartAtUtc >= first && x.StartAtUtc < next &&
             ((x.Status == "PendingPayment" && x.ExpiresAtUtc > now) || x.Status == "Confirmed" || x.Status == "Completed"))
-            .Select(x => x.StartAtUtc).ToListAsync(ct);
+            .Select(x => x.StartAtUtc).ToListAsync(ct)).ToHashSet();
         return Results.Ok(Enumerable.Range(branch.OpeningHour, branch.ClosingHour - branch.OpeningHour).Select(hour =>
         {
             var start = BookingService.ToUtc(date, hour);
@@ -81,7 +81,7 @@ public sealed class BookingQueryService(BookingRepository repo, BookingService b
     }
 
     public async Task<IResult> ListNotifications(ClaimsPrincipal actor, int? page, int? size, CancellationToken ct) =>
-        Results.Ok(await repo.Notifications.Where(x => x.UserId == Id(actor)).OrderByDescending(x => x.Id)
+        Results.Ok(await repo.Notifications.AsNoTracking().Where(x => x.UserId == Id(actor)).OrderByDescending(x => x.Id)
             .Skip(Offset(page, size)).Take(PageSize(size)).ToListAsync(ct));
 
     public async Task<IResult> ReadNotification(long id, ClaimsPrincipal actor, CancellationToken ct)

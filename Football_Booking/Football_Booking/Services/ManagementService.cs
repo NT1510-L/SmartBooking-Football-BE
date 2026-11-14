@@ -13,7 +13,7 @@ public sealed record PriceInput(string EffectiveFrom, long RegularPriceVnd, long
 public sealed class ManagementService(BookingRepository repo, PricingService.PricingServiceClient pricing)
 {
     public async Task<IResult> ListBranches(CancellationToken ct) =>
-        Results.Ok(await repo.Branches.OrderBy(x => x.Id).ToListAsync(ct));
+        Results.Ok(await repo.Branches.AsNoTracking().OrderBy(x => x.Id).ToListAsync(ct));
 
     public async Task<IResult> ListPaymentReceipts(int? page, int? size, CancellationToken ct) =>
         Results.Ok(await (from receipt in repo.Receipts.AsNoTracking()
@@ -76,12 +76,12 @@ public sealed class ManagementService(BookingRepository repo, PricingService.Pri
     }
 
     public async Task<IResult> ListManagedBranches(ClaimsPrincipal actor, CancellationToken ct) =>
-        Results.Ok(await repo.Branches.Where(x => actor.IsInRole("Admin") ||
+        Results.Ok(await repo.Branches.AsNoTracking().Where(x => actor.IsInRole("Admin") ||
             repo.Managers.Any(m => m.BranchId == x.Id && m.ManagerId == Id(actor))).ToListAsync(ct));
 
     public async Task<IResult> ListPitches(long id, ClaimsPrincipal actor, CancellationToken ct) =>
         await Allowed(actor, id, ct)
-            ? Results.Ok(await repo.Pitches.Where(x => x.BranchId == id).OrderBy(x => x.PitchNumber).ToListAsync(ct))
+            ? Results.Ok(await repo.Pitches.AsNoTracking().Where(x => x.BranchId == id).OrderBy(x => x.PitchNumber).ToListAsync(ct))
             : Results.Forbid();
 
     public async Task<IResult> CreatePitch(long branchId, PitchInput input, ClaimsPrincipal actor, CancellationToken ct)
