@@ -26,7 +26,7 @@ public sealed class BookingService(BookingRepository repo, PricingService.Pricin
         await pricing.QuoteAsync(new QuoteRequest
         {
             BranchId = branchId, LocalDate = date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), Hour = hour
-        }, deadline: DateTime.UtcNow.AddSeconds(5), cancellationToken: ct);
+        }, deadline: DateTime.UtcNow.AddSeconds(15), cancellationToken: ct);
 
     public PaymentView PaymentDetails(Payment payment)
     {
