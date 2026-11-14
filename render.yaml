@@ -1,26 +1,4 @@
 services:
-  # MySQL remains private; it is never exposed to the public Internet.
-  - type: pserv
-    runtime: docker
-    name: football-mysql
-    region: singapore
-    plan: 0.5c-512mb
-    dockerfilePath: ./Dockerfile.mysql
-    dockerContext: .
-    disk:
-      name: mysql-data
-      mountPath: /var/lib/mysql
-      sizeGB: 10
-    envVars:
-      - key: MYSQL_ROOT_PASSWORD
-        generateValue: true
-      - key: BOOKING_DB_PASSWORD
-        generateValue: true
-      - key: PRICING_DB_PASSWORD
-        generateValue: true
-      - key: TZ
-        value: UTC
-
   - type: keyvalue
     name: football-redis
     region: singapore
@@ -37,12 +15,8 @@ services:
     dockerfilePath: ./Dockerfile.pricing
     dockerContext: .
     envVars:
-      - key: Database__Host
-        fromService: { type: pserv, name: football-mysql, property: host }
-      - key: Database__Port
-        fromService: { type: pserv, name: football-mysql, property: port }
-      - key: Database__PricingPassword
-        fromService: { type: pserv, name: football-mysql, envVarKey: PRICING_DB_PASSWORD }
+      - key: ConnectionStrings__Pricing
+        sync: false
 
   - type: web
     runtime: docker
@@ -55,12 +29,8 @@ services:
     envVars:
       - key: ASPNETCORE_URLS
         value: http://+:10000
-      - key: Database__Host
-        fromService: { type: pserv, name: football-mysql, property: host }
-      - key: Database__Port
-        fromService: { type: pserv, name: football-mysql, property: port }
-      - key: Database__BookingPassword
-        fromService: { type: pserv, name: football-mysql, envVarKey: BOOKING_DB_PASSWORD }
+      - key: ConnectionStrings__Booking
+        sync: false
       - key: Pricing__HostPort
         fromService: { type: pserv, name: football-pricing, property: hostport }
       - key: Jwt__Key
@@ -88,11 +58,7 @@ services:
     envVars:
       - key: RunMode
         value: Worker
-      - key: Database__Host
-        fromService: { type: pserv, name: football-mysql, property: host }
-      - key: Database__Port
-        fromService: { type: pserv, name: football-mysql, property: port }
-      - key: Database__BookingPassword
-        fromService: { type: pserv, name: football-mysql, envVarKey: BOOKING_DB_PASSWORD }
+      - key: ConnectionStrings__Booking
+        sync: false
       - key: ConnectionStrings__Redis
         fromService: { type: keyvalue, name: football-redis, property: connectionString }
