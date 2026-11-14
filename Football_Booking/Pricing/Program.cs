@@ -13,6 +13,7 @@ builder.Services.AddDbContext<PricingDb>(options => options.UseMySql(connection,
 builder.Services.AddGrpc();
 var app = builder.Build();
 app.MapGrpcService<PricingEndpoint>();
+app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 app.Run();
 
 static string ResolveMySqlConnection(IConfiguration config)
