@@ -1,5 +1,7 @@
 # Deploy Render
 
+Để tạo bản test trên tài khoản Render riêng, dùng Blueprint Path `render.liem-test.yaml` và branch `liem`. File này tạo API và Redis Free với tên riêng, chạy Pricing/Worker trong API container và dùng tài khoản ngân hàng giả. Hai connection string phải trỏ tới database test `booking_liem_test` và `pricing_liem_test` đã khởi tạo bằng script 01–07 đổi tên schema tương ứng. Sau khi API test chạy, cập nhật rewrite `/api` của FE nhánh `liem` tới URL thực tế của API test.
+
 `render.yaml` triển khai Booking API và Key Value trên Render Free. Container API khởi động Pricing Service dưới tiến trình riêng, chỉ lắng nghe ở `127.0.0.1:5081`. Booking API gọi Pricing qua gRPC-Web và chạy Worker nền trong cùng tiến trình. Hai database MySQL nằm trên Aiven.
 
 ## 0. Tạo database Aiven
