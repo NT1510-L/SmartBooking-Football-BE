@@ -29,7 +29,7 @@ public sealed class BookingQueryService(BookingRepository repo, BookingService b
         var next = first.AddDays(1);
         var now = DateTime.UtcNow;
         var occupied = (await repo.Bookings.AsNoTracking().Where(x => x.PitchId == id && x.StartAtUtc >= first && x.StartAtUtc < next &&
-            ((x.Status == "PendingPayment" && x.ExpiresAtUtc > now) || x.Status == "Confirmed" || x.Status == "Completed"))
+            ((x.Status == "PendingPayment" && x.ExpiresAtUtc > now) || x.Status == "Confirmed" || x.Status == "CheckedIn" || x.Status == "Completed"))
             .Select(x => x.StartAtUtc).ToListAsync(ct)).ToHashSet();
         return Results.Ok(Enumerable.Range(branch.OpeningHour, branch.ClosingHour - branch.OpeningHour).Select(hour =>
         {
@@ -77,7 +77,7 @@ public sealed class BookingQueryService(BookingRepository repo, BookingService b
             (!actor.IsInRole("Manager") || !await repo.Manages(Id(actor), await repo.BranchOf(booking.PitchId, ct), ct)))
             return Results.Forbid();
         var payment = await repo.Payments.AsNoTracking().SingleOrDefaultAsync(x => x.BookingId == id, ct);
-        return Results.Ok(new { booking, payment = payment is null ? null : bookings.PaymentDetails(payment, own ? booking.ExpiresAtUtc : null) });
+        return Results.Ok(new { booking, payment = payment is null ? null : bookings.PaymentDetails(payment, own ? booking.ExpiresAtUtc : null, booking.Status) });
     }
 
     public async Task<IResult> ListNotifications(ClaimsPrincipal actor, int? page, int? size, CancellationToken ct) =>

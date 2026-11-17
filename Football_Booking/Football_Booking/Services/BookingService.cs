@@ -11,7 +11,9 @@ namespace Football_Booking.Services;
 
 public sealed record BookingInput(long PitchId, DateOnly Date, int Hour, long? ExpectedAmountVnd = null);
 public sealed record SepayEvent(long Id, string? AccountNumber, string? Code, string? Content, string? TransferType, long TransferAmount);
-public sealed record PaymentView(string Code, long AmountVnd, string Status, string? QrUrl, bool IsDemo);
+public sealed record PaymentView(string Code, long AmountVnd, string Status, string? QrUrl, bool IsDemo,
+    long BalanceAmountVnd, string BalanceStatus, DateTime? BalancePaidAtUtc,
+    long TotalAmountVnd, long PaidAmountVnd, long RemainingAmountVnd);
 
 public sealed class BookingService(BookingRepository repo, PricingService.PricingServiceClient pricing,
     IConfiguration config, ILogger<BookingService> logger)
@@ -28,7 +30,7 @@ public sealed class BookingService(BookingRepository repo, PricingService.Pricin
             BranchId = branchId, LocalDate = date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), Hour = hour
         }, deadline: DateTime.UtcNow.AddSeconds(15), cancellationToken: ct);
 
-    public PaymentView PaymentDetails(Payment payment, DateTime? expiresAtUtc)
+    public PaymentView PaymentDetails(Payment payment, DateTime? expiresAtUtc, string bookingStatus)
     {
         var account = config["Sepay:AccountNumber"];
         var bank = config["Sepay:Bank"];
@@ -37,7 +39,15 @@ public sealed class BookingService(BookingRepository repo, PricingService.Pricin
             !isDemo && !string.IsNullOrWhiteSpace(account) && !string.IsNullOrWhiteSpace(bank)
             ? $"https://vietqr.app/img?acc={Uri.EscapeDataString(account)}&bank={Uri.EscapeDataString(bank)}&amount={payment.AmountVnd}&des={Uri.EscapeDataString(payment.Code)}"
             : null;
-        return new PaymentView(payment.Code, payment.AmountVnd, payment.Status, qr, isDemo);
+        var balanceStatus = payment.BalanceAmountVnd == 0 ? "NotRequired"
+            : payment.BalancePaidAtUtc.HasValue ? "Paid"
+            : bookingStatus is "Cancelled" or "Expired" or "NoShow" ? "Cancelled" : "Pending";
+        var total = payment.AmountVnd + payment.BalanceAmountVnd;
+        var paid = (payment.Status == "Paid" ? payment.AmountVnd : 0)
+            + (payment.BalancePaidAtUtc.HasValue ? payment.BalanceAmountVnd : 0);
+        var remaining = bookingStatus is "Cancelled" or "Expired" or "NoShow" ? 0 : total - paid;
+        return new PaymentView(payment.Code, payment.AmountVnd, payment.Status, qr, isDemo,
+            payment.BalanceAmountVnd, balanceStatus, payment.BalancePaidAtUtc, total, paid, remaining);
     }
 
     public async Task<IResult> Create(long userId, BookingInput input, CancellationToken ct)
@@ -84,15 +94,17 @@ public sealed class BookingService(BookingRepository repo, PricingService.Pricin
         };
         repo.Add(booking);
         await repo.SaveChangesAsync(ct);
+        var deposit = quote.Amount / 2 + quote.Amount % 2;
         var payment = new Payment
         {
-            BookingId = booking.Id, AmountVnd = quote.Amount, Code = "SB" + Convert.ToHexString(RandomNumberGenerator.GetBytes(8))
+            BookingId = booking.Id, AmountVnd = deposit, BalanceAmountVnd = quote.Amount - deposit,
+            Code = "SB" + Convert.ToHexString(RandomNumberGenerator.GetBytes(8))
         };
         repo.Add(payment);
         await repo.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
         logger.LogInformation("Created pending booking {BookingId}", booking.Id);
-        return Results.Created($"/api/bookings/{booking.Id}", new { booking, payment = PaymentDetails(payment, booking.ExpiresAtUtc) });
+        return Results.Created($"/api/bookings/{booking.Id}", new { booking, payment = PaymentDetails(payment, booking.ExpiresAtUtc, booking.Status) });
     }
 
     public async Task<IResult> Cancel(long id, long actorId, string role, CancellationToken ct)
@@ -163,6 +175,51 @@ public sealed class BookingService(BookingRepository repo, PricingService.Pricin
         await tx.CommitAsync(ct);
         logger.LogInformation("SePay transaction {TransactionId} for booking {BookingId}: {Outcome}", incoming.Id, booking.Id, outcome);
         return Results.Ok(new { success = true });
+    }
+
+    public async Task<IResult> CheckIn(long id, long actorId, string role, CancellationToken ct)
+    {
+        await using var tx = await repo.BeginTransactionAsync(ct);
+        var booking = await repo.Lock(id, ct);
+        if (booking is null) return Results.NotFound();
+        if (role != "Admin" && !await repo.Manages(actorId, await repo.BranchOf(booking.PitchId, ct), ct))
+            return Results.Forbid();
+        if (booking.CheckedInAtUtc.HasValue) return Results.NoContent();
+        if (await repo.MarkNoShow(booking, DateTime.UtcNow, ct))
+        {
+            await tx.CommitAsync(ct);
+            return Results.Conflict(new { message = "Đã quá hạn check-in 10 phút. Lịch đã chuyển sang không đến sân." });
+        }
+        if (booking.Status != "Confirmed")
+            return Results.Conflict(new { message = "Chỉ check-in lịch đã xác nhận thanh toán cọc." });
+        var payment = await repo.Payments.SingleOrDefaultAsync(x => x.BookingId == id, ct);
+        if (payment is not { Status: "Paid" })
+            return Results.Conflict(new { message = "Chưa nhận được tiền cọc của lịch này." });
+        booking.CheckedInAtUtc = DateTime.UtcNow;
+        booking.CheckedInByUserId = actorId;
+        booking.Status = "CheckedIn";
+        await repo.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
+        return Results.NoContent();
+    }
+
+    public async Task<IResult> CollectBalance(long id, long actorId, string role, CancellationToken ct)
+    {
+        await using var tx = await repo.BeginTransactionAsync(ct);
+        var booking = await repo.Lock(id, ct);
+        if (booking is null) return Results.NotFound();
+        if (role != "Admin" && !await repo.Manages(actorId, await repo.BranchOf(booking.PitchId, ct), ct))
+            return Results.Forbid();
+        var payment = await repo.Payments.SingleOrDefaultAsync(x => x.BookingId == id, ct);
+        if (payment is null) return Results.NotFound();
+        if (payment.BalanceAmountVnd == 0 || payment.BalancePaidAtUtc.HasValue) return Results.NoContent();
+        if (booking.Status is not ("CheckedIn" or "Completed") || !booking.CheckedInAtUtc.HasValue || payment.Status != "Paid")
+            return Results.Conflict(new { message = "Cần check-in và xác nhận tiền cọc trước khi thu phần còn lại tại sân." });
+        payment.BalancePaidAtUtc = DateTime.UtcNow;
+        payment.BalanceCollectedByUserId = actorId;
+        await repo.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
+        return Results.NoContent();
     }
 
     private void AddEvent(Booking booking, string type) => repo.Add(new Outbox

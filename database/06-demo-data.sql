@@ -29,11 +29,11 @@ INSERT INTO branchmanagers (managerId, branchId) VALUES
 
 INSERT INTO pitches (branchId, pitchNumber, name, isActive) VALUES
 (@thuDucId, 1, 'Sân 5 người A', TRUE), (@thuDucId, 2, 'Sân 5 người B', TRUE),
-(@thuDucId, 3, 'Sân 5 người C', TRUE), (@thuDucId, 4, 'Sân 7 người', TRUE),
+(@thuDucId, 3, 'Sân 5 người C', TRUE),
 (@tanBinhId, 1, 'Sân 5 người A', TRUE), (@tanBinhId, 2, 'Sân 5 người B', TRUE),
-(@tanBinhId, 3, 'Sân 7 người A', TRUE), (@tanBinhId, 4, 'Sân 7 người B', TRUE),
+(@tanBinhId, 3, 'Sân 7 người A', TRUE),
 (@quan7Id, 1, 'Sân 5 người 1', TRUE), (@quan7Id, 2, 'Sân 5 người 2', TRUE),
-(@quan7Id, 3, 'Sân 7 người', TRUE), (@quan7Id, 4, 'Sân 11 người', TRUE);
+(@quan7Id, 3, 'Sân 7 người', TRUE);
 
 USE pricing_db;
 INSERT INTO pricingpolicies (branchId, effectiveFrom, regularPriceVnd, peakPriceVnd, peakStartHour, peakEndHour) VALUES

@@ -1,0 +1,50 @@
+# Separate test services. Select branch liem and this Blueprint path in Render.
+# Connection strings must point to booking_liem_test and pricing_liem_test.
+services:
+  - type: keyvalue
+    name: smartbooking-liem-test-redis
+    region: singapore
+    plan: free
+    ipAllowList: []
+    maxmemoryPolicy: noeviction
+
+  - type: web
+    runtime: docker
+    name: smartbooking-liem-test-api
+    repo: https://github.com/NT1510-L/SmartBooking-Football-BE
+    branch: liem
+    region: singapore
+    plan: free
+    healthCheckPath: /health
+    dockerfilePath: ./Dockerfile.api
+    dockerContext: .
+    envVars:
+      - key: ASPNETCORE_URLS
+        value: http://+:10000
+      - key: ConnectionStrings__Booking
+        sync: false
+      - key: ConnectionStrings__Pricing
+        sync: false
+      - key: Pricing__RunLocal
+        value: "true"
+      - key: RunBookingWorker
+        value: "true"
+      - key: ConnectionStrings__Redis
+        fromService:
+          type: keyvalue
+          name: smartbooking-liem-test-redis
+          property: connectionString
+      - key: Jwt__Key
+        generateValue: true
+      - key: BootstrapAdmin__Email
+        value: admin.liem@example.test
+      - key: BootstrapAdmin__Password
+        sync: false
+      - key: Web__Origin
+        value: https://smart-booking-football-fe-git-liem-nguyn-thanh-liems-projects.vercel.app
+      - key: Sepay__Bank
+        value: Sacombank
+      - key: Sepay__AccountNumber
+        value: "0000000000"
+      - key: Sepay__WebhookKey
+        sync: false

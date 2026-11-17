@@ -33,7 +33,9 @@ public sealed class BookingDb(DbContextOptions<BookingDb> options) : DbContext(o
         builder.Entity<Booking>().Property(x => x.CreatedAtUtc).HasColumnName("createdAt");
         builder.Entity<Booking>().Property(x => x.ExpiresAtUtc).HasColumnName("expiresAt");
         builder.Entity<Booking>().Property(x => x.CancelledAtUtc).HasColumnName("cancelledAt");
+        builder.Entity<Booking>().Property(x => x.CheckedInAtUtc).HasColumnName("checkedInAt");
         builder.Entity<Payment>().Property(x => x.PaidAtUtc).HasColumnName("paidAt");
+        builder.Entity<Payment>().Property(x => x.BalancePaidAtUtc).HasColumnName("balancePaidAt");
         builder.Entity<Receipt>().Property(x => x.ReceivedAtUtc).HasColumnName("receivedAt");
         builder.Entity<Outbox>().Property(x => x.OccurredAtUtc).HasColumnName("occurredAt");
         builder.Entity<Outbox>().Property(x => x.PublishedAtUtc).HasColumnName("publishedAt");
@@ -94,6 +96,8 @@ public sealed class Booking
     public DateTime? ExpiresAtUtc { get; set; }
     public DateTime? CancelledAtUtc { get; set; }
     public long? CancelledByUserId { get; set; }
+    public DateTime? CheckedInAtUtc { get; set; }
+    public long? CheckedInByUserId { get; set; }
     public string Status { get; set; } = "PendingPayment";
     public long PriceVnd { get; set; }
     public long PricingPolicyId { get; set; }
@@ -108,6 +112,9 @@ public sealed class Payment
     public long AmountVnd { get; set; }
     public string Status { get; set; } = "Pending";
     public DateTime? PaidAtUtc { get; set; }
+    public long BalanceAmountVnd { get; set; }
+    public DateTime? BalancePaidAtUtc { get; set; }
+    public long? BalanceCollectedByUserId { get; set; }
 }
 
 [Table("paymentreceipts")]

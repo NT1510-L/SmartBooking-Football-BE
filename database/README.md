@@ -1,52 +1,70 @@
-# Thiết kế database đặt sân
+# Database SmartBooking
 
-Các script khởi tạo hai database trên cùng một MySQL 8.4 instance. Chạy bằng tài khoản có quyền tạo database và bảng.
+MySQL chứa hai schema `booking_db` và `pricing_db`, tổng cộng 10 bảng. Booking API và Worker dùng `booking_db`, Pricing Service dùng `pricing_db`.
+
+## Khởi tạo và nâng cấp
+
+Docker Compose chạy script 01–07 khi tạo volume mới. Với MySQL/Aiven mới, chạy lần lượt các script trong thư mục `database`. Script 06 thêm dữ liệu demo gồm ba chi nhánh, mỗi chi nhánh ba sân.
 
 ```sql
 SOURCE 01-booking.sql;
 SOURCE 02-pricing.sql;
 SOURCE 03-sepay.sql;
 SOURCE 04-pitch-capacity.sql;
+SOURCE 05-camel-case-naming.sql;
+SOURCE 06-demo-data.sql;
+SOURCE 07-deposit-check-in.sql;
 ```
 
-Chạy các lệnh trên trong MySQL client mở từ thư mục `database`. Khi chuyển sang EF Core, tạo một bộ migration cho mỗi DbContext và chọn một cách khởi tạo cho từng môi trường để tránh tạo bảng hai lần.
-
-Với volume Docker đã tạo trước khi bỏ giới hạn sân, chạy migration 04 một lần từ thư mục backend trước khi build lại API:
+Các migration chạy một lần. Với database đã có script 01–06, sao lưu dữ liệu rồi chạy script 07 trước khi khởi động API/Worker mới. Trên Docker local, chạy từ thư mục backend.
 
 ```powershell
-Get-Content -Raw database/04-pitch-capacity.sql | docker compose exec -T mysql sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot booking_db'
+Get-Content -Raw database/07-deposit-check-in.sql | docker compose exec -T mysql sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot'
 docker compose up -d --build
 ```
 
-## Booking DB
+Script 07 giữ nguyên số tiền của payment cũ và đặt `balanceAmountVnd = 0`. Các lịch `Confirmed` cũ đã kết thúc chuyển sang `Completed` trước khi áp dụng no-show. Sân có số lớn hơn ba được ngưng hoạt động để giữ lịch sử. Các bản ghi này tiếp tục xuất hiện trong quản lý dưới dạng sân lưu trữ.
 
-| Bảng | Vai trò |
+## booking_db
+
+| Bảng | Trách nhiệm |
 |---|---|
-| `users` | Tài khoản, mật khẩu đã băm, trạng thái và một trong ba vai trò User, Manager, Admin. |
-| `branches` | Thông tin chi nhánh, khu vực và giờ mở cửa. |
-| `branchManagers` | Mỗi Manager quản lý tối đa một chi nhánh và mỗi chi nhánh có tối đa một Manager. |
-| `pitches` | Sân thuộc chi nhánh, có số thứ tự dương và duy nhất trong chi nhánh. |
-| `bookings` | Lịch đặt, sân, người đặt, giá đã chốt, mã bảng giá và thông tin hủy. |
-| `outbox_messages` | Sự kiện đặt hoặc hủy chờ phát lên Redis Streams. |
-| `notifications` | Thông báo trong ứng dụng và thời điểm đã đọc. |
+| `users` | Tài khoản và vai trò User, Manager, Admin. |
+| `branches` | Địa chỉ, khu vực, giờ hoạt động, trạng thái chi nhánh. |
+| `branchmanagers` | Một Manager quản lý tối đa một chi nhánh và mỗi chi nhánh có tối đa một Manager. |
+| `pitches` | Số sân duy nhất trong chi nhánh, tên và trạng thái. |
+| `bookings` | Lịch đặt, tổng giá đã chốt, hạn giữ sân, check-in và thông tin hủy. |
+| `payments` | Tiền cọc, khoản còn lại, thời điểm thanh toán và nhân viên thu phần còn lại. |
+| `paymentreceipts` | Giao dịch SePay đã đối chiếu, chống xử lý trùng bằng `sepayId`. |
+| `outboxmessages` | Sự kiện xác nhận, hủy và no-show chờ phát vào Redis Streams. |
+| `notifications` | Thông báo cho người dùng và thời điểm đã đọc. |
 
-- Chi nhánh mới có thể bắt đầu với 0 sân. Admin hoặc Manager của chi nhánh thêm sân qua API. Cột `pitch_number` là `BIGINT`. API khóa bản ghi chi nhánh trong transaction khi cấp số tiếp theo để hai lần thêm đồng thời nhận hai số khác nhau. Dùng `is_active` khi sân tạm ngừng hoạt động.
-- Chỉ Admin được gán Manager. Booking API kiểm tra tài khoản được gán có role Manager, kiểm tra chi nhánh được giao khi thao tác và cập nhật hoặc xóa phân công trong cùng transaction khi thay đổi vai trò.
-- Mỗi lượt đặt có một slot 60 phút, bắt đầu đúng đầu giờ. API tính giờ trống từ giờ hoạt động và các booking của sân. API kiểm tra sân và chi nhánh đang hoạt động, giờ đặt nằm trong giờ mở cửa và thời điểm bắt đầu còn ở tương lai.
-- `occupiedStartTime` có giá trị cho lịch `Confirmed` và `Completed`. Khi hủy lịch, cột này thành `NULL`. Unique index cho phép giữ nhiều lịch sử đã hủy và chỉ cho một lịch chưa hủy trên cùng sân và giờ. API chuyển lỗi trùng của index này thành HTTP 409.
-- Booking có trạng thái ban đầu `Confirmed`. Hủy trước giờ bắt đầu sẽ ghi cả thời điểm lẫn người hủy. Worker định kỳ cập nhật các lịch `Confirmed` đã qua giờ kết thúc sang `Completed`. Điều kiện trạng thái phải nằm trong câu lệnh cập nhật để các lần chạy lại không đổi lịch đã hủy.
-- Lưu booking hoặc thao tác hủy cùng sự kiện outbox trong một transaction. Worker phát các bản ghi chưa có `publishedAt`, rồi đánh dấu đã phát. Consumer lưu thông báo theo khóa `(eventId, userId)` và xác nhận Redis sau khi transaction lưu thông báo đã commit.
+Booking mới cọc 50% tổng giá, làm tròn lên một VND. `payments.amountVnd` là khoản cần chuyển qua SePay, `balanceAmountVnd` là khoản thu tại sân. Tổng hai khoản bằng `bookings.priceVnd`. `payments.bookingId` vẫn có UNIQUE, mỗi booking tạo một payment chứa cả hai khoản.
 
-## Pricing DB
+Webhook đúng mã, tài khoản, số tiền cọc và còn hạn chuyển booking từ `PendingPayment` sang `Confirmed`, payment từ `Pending` sang `Paid`. `Paid` biểu thị khoản SePay đã nhận. API trả thêm `balanceStatus`, `totalAmountVnd`, `paidAmountVnd` và `remainingAmountVnd` để frontend hiển thị đủ tình trạng thu tiền.
 
-`pricingPolicies` lưu các phiên bản bảng giá theo chi nhánh. Pricing Service chọn phiên bản có `effectiveFrom` mới nhất mà vẫn nhỏ hơn hoặc bằng **ngày đá tại địa phương**. Giá cao điểm áp dụng khi giờ bắt đầu slot nằm trong khoảng `[peakStartHour, peakEndHour)`. Giá tính bằng số nguyên VND.
+Staff đúng chi nhánh hoặc Admin dùng `POST /api/management/bookings/{id}/check-in` để ghi nhận khách đến trước mốc giờ bắt đầu cộng mười phút. Sau check-in, `POST /api/management/bookings/{id}/collect-balance` xác nhận khoản đã thu tại sân và lưu `balancePaidAt`, `balanceCollectedByUserId`. Hai thao tác khóa booking trong transaction và hỗ trợ gọi lại an toàn.
 
-Booking API kiểm tra quyền Manager hoặc Admin trước khi gọi Pricing Service qua gRPC để cập nhật giá. Khi tạo booking, API lấy mã chi nhánh từ sân, gọi gRPC lấy giá và lưu `priceVnd` cùng `pricingPolicyId`. Chi nhánh phải có bảng giá hiệu lực trước khi nhận lịch. Hai database dùng mã tham chiếu qua gRPC, với các khóa ngoại chỉ nằm trong từng database.
+Worker chạy chu kỳ ba giây.
 
-## Thanh toán SePay
+- `PendingPayment` hết hạn chuyển sang `Expired`, payment sang `Expired`.
+- `Confirmed` quá mười phút sau giờ bắt đầu mà chưa check-in chuyển sang `NoShow`. Khoản cọc được giữ lại, phần còn lại không thu. Worker tạo sự kiện `BookingNoShow` và thông báo.
+- `CheckedIn` đã qua giờ kết thúc chuyển sang `Completed`. Khoản tại sân chưa thu vẫn hiển thị để staff hoàn tất.
 
-Sau migration SePay, bảng `bookings` có thêm `expires_at_utc` và hai trạng thái `PendingPayment`, `Expired`. Trạng thái chờ thanh toán giữ slot, trạng thái hết hạn giải phóng slot. API xác nhận lịch sau khi webhook khớp số tiền và mã thanh toán. Hai bảng mới gồm `payments` lưu khoản cần thu theo booking và `payment_receipts` lưu các giao dịch SePay đã xử lý, với `sepay_id` là khóa chống trùng. Khoản nhận sai số tiền hoặc nhận khi lịch đã đóng xuất hiện trong mục đối soát của Admin.
+`endTime` là cột sinh bằng `startTime + 1 giờ`. `occupiedStartTime` bằng `startTime` với `PendingPayment`, `Confirmed`, `CheckedIn`, `Completed` và bằng NULL với trạng thái giải phóng sân. `UNIQUE (pitchId, occupiedStartTime)` chống đặt trùng.
 
-## Quy ước thời gian
+API khóa chi nhánh trong transaction khi thêm sân. API chặn tạo quá ba bản ghi sân trong một chi nhánh. SQL dùng `UNIQUE (branchId, pitchNumber)` và CHECK cho phép số sân 1–3 hoạt động. Sân cũ có số lớn hơn ba giữ trạng thái lưu trữ.
 
-Booking API và Worker lưu thời điểm dưới dạng UTC và đặt timezone của các session MySQL thành UTC để các giá trị `CURRENT_TIMESTAMP` trong schema được ghi đúng. Giờ mở cửa, giờ cao điểm và ngày hiệu lực được tính theo múi giờ `Asia/Ho_Chi_Minh`. Bản đầu dùng giờ nguyên và giờ hoạt động trong cùng ngày. Giá trị giờ đóng cửa 24 biểu thị hết ngày.
+Cập nhật xác nhận/hủy/no-show và sự kiện outbox nằm trong cùng transaction. Worker phát sự kiện, ghi notification theo `UNIQUE (eventId, userId)` rồi ACK Redis. Sau script 07, `booking_db` có 13 FK vật lý, bao gồm người check-in và người thu phần còn lại.
+
+## pricing_db và quan hệ logic
+
+`pricingpolicies` lưu phiên bản giá theo chi nhánh. Chọn `effectiveFrom` mới nhất không vượt quá ngày đá. Giá cao điểm áp dụng trong `[peakStartHour, peakEndHour)`. Giá được lưu bằng số nguyên VND.
+
+`UNIQUE (branchId, effectiveFrom)` bảo vệ phiên bản. Booking lưu giá đã chốt và `pricingPolicyId`. API kiểm `expectedAmountVnd` và trả `409 PriceChanged` nếu giá lấy lại qua gRPC thay đổi.
+
+Các FK nằm trong `booking_db`. `pricingpolicies.branchId`, `bookings.pricingPolicyId` và `notifications.eventId` là tham chiếu logic.
+
+## Thời gian
+
+API và Worker lưu thời điểm UTC, giao diện hiển thị giờ Việt Nam. Giờ mở cửa, khung cao điểm và ngày hiệu lực dùng `Asia/Ho_Chi_Minh`. Giờ đóng cửa 24 biểu thị hết ngày.

@@ -1,80 +1,44 @@
-# SmartBooking — rà soát chức năng và luồng demo
+# SmartBooking — báo cáo kiểm thử ngày 18/11/2026
 
-Bản demo dùng Docker Compose tại [SmartBooking](http://localhost:5173). [Swagger](http://localhost:5045/swagger) cung cấp tài liệu API và thử các route có JWT. SePay được mô phỏng bằng script local.
+Bản kiểm thử chạy trên stack Docker QA riêng, MySQL 8.4 thật, Redis 7, Pricing gRPC-Web, Booking API/Worker và Chrome desktop. Dữ liệu và webhook đều là giả lập. Tái chạy bằng `./scripts/test.ps1` sau `npm ci` trong repo frontend.
 
-## Luồng nghiệp vụ
+## Kết quả
 
-1. Admin tạo chi nhánh và gán Manager. Admin hoặc Manager phụ trách có thể thêm sân theo nhu cầu.
-2. Manager chỉ nhìn thấy chi nhánh được gán. Manager có thể đổi tên hoặc ngừng nhận lịch cho một sân, quản lý bảng giá theo ngày hiệu lực và xem lịch của chi nhánh.
-3. User tìm chi nhánh, chọn sân và khung giờ theo giờ Việt Nam. Booking API gọi Pricing Service qua gRPC để lấy giá. Slot dài 60 phút và phải nằm trong giờ mở cửa.
-4. API ghi booking `PendingPayment` và khoản cần thu trong cùng transaction. Giữ tối đa 10 phút hoặc tới giờ đá nếu sớm hơn. MySQL chặn hai lịch cùng giữ một sân và giờ.
-5. Bản demo nhận webhook giả từ `pwsh -File ./scripts/demo.ps1 -BookingId <id>`. Backend xác thực webhook, đối chiếu tài khoản nhận, mã và số tiền. Khi hợp lệ, API chuyển payment thành `Paid`, booking thành `Confirmed` và ghi outbox.
-6. Worker phát outbox lên Redis Streams, nhận sự kiện qua consumer group, lưu thông báo rồi xác nhận đã xử lý. Worker cũng giải phóng giữ chỗ quá hạn và hoàn tất lịch đã qua giờ.
-7. Giao dịch sai tiền hoặc đến khi lịch đã đóng được giữ để Admin đối soát. User có thể hủy trực tiếp giữ chỗ đang chờ thanh toán.
+Bộ regression thực thi cả 35 thao tác Swagger qua 171 yêu cầu API, đồng thời kiểm tra giao diện của User, Manager và Admin. Migration 07 đã chạy thành công trên dữ liệu cũ giả lập trước khi chạy regression.
 
-```mermaid
-flowchart LR
-    Web[React] --> API[REST API]
-    API --> Service[Services]
-    Service --> Repo[Repository]
-    Repo --> Booking[(booking_db)]
-    Service -->|gRPC| Pricing[Pricing Service]
-    Pricing --> Prices[(pricing_db)]
-    Webhook[Webhook giả hoặc SePay] --> API
-    Worker -->|Đọc outbox và lưu thông báo| Booking
-    Worker -->|Producer| Redis[Redis Streams]
-    Redis -->|Consumer group| Worker
-```
-
-## Hai database MySQL
-
-| Schema | Bảng và trách nhiệm |
+| Phần | Bằng chứng đã kiểm tra |
 |---|---|
-| `booking_db` — 9 bảng | `users`, `branches`, `branch_managers`, `pitches`, `bookings`, `payments`, `payment_receipts`, `outbox_messages`, `notifications`. |
-| `pricing_db` — 1 bảng | `pricing_policies` lưu giá thường, giá cao điểm, giờ cao điểm và ngày hiệu lực theo chi nhánh. |
+| JWT và phân quyền | Đăng ký/đăng nhập, token sai, quyền User/Admin, Manager khác chi nhánh bị 403; User không xem/hủy lịch người khác. |
+| Danh mục và CRUD | Tìm kiếm, khu vực, phân trang, chi nhánh/sân, gán/gỡ Manager, giới hạn ba sân kể cả sân đang ngừng hoạt động. |
+| Pricing gRPC | CRUD giá, ngày hiệu lực, biên giờ cao điểm, lỗi trùng ngày, fallback giá, dừng dịch vụ rồi thử lại trên UI. |
+| Booking/MySQL | Giá đổi yêu cầu xác nhận lại, hai yêu cầu cùng slot trả 201/409, hủy và đặt lại, lọc/sắp xếp/phân trang. |
+| Cọc 50% | Tổng 270.000đ có cọc 135.000đ; tổng lẻ 270.001đ có cọc 135.001đ và khoản còn lại 135.000đ. |
+| Webhook giả | Sai key, sai tài khoản/loại giao dịch, sai tiền, thành công, replay, đến muộn, biên nhận và đối soát Admin. |
+| Check-in/thu tiền | Chỉ Manager đúng chi nhánh hoặc Admin; cần cọc Paid; không thu trước check-in; thao tác đồng thời/lặp không ghi nhận hai lần. |
+| Worker/Redis | Hết hạn và mở lại slot; chỉ lịch đã check-in được Completed; no-show từ giờ bắt đầu +10 phút; outbox, consumer và thông báo không trùng. |
+| Migration cũ | Giữ payment thu toàn bộ với balance=0; lịch đã kết thúc thành Completed; sân số 4 được giữ lại ở trạng thái ngừng hoạt động. |
+| User UI | Đăng ký/đăng nhập, tìm sân, giữ lựa chọn, đặt cọc, khôi phục checkout sau reload, lịch cá nhân, đọc thông báo. Thông báo tự hiện khi Worker xử lý chậm trong lúc màn hình vẫn mở. |
+| Manager/Admin UI | Chi nhánh, phân công, sửa sân, CRUD giá, khóa thêm sân thứ tư, lịch theo sân/ngày/trạng thái, check-in và xác nhận khoản còn lại. |
+| Container kiểu Render | Dockerfile.api khởi động Pricing cục bộ và Worker cùng API. Khi tắt Pricing/Worker độc lập, báo giá gRPC, cọc, webhook và thông báo Redis vẫn hoạt động. |
 
-- `branches` có thể có nhiều `pitches`. Mỗi cặp chi nhánh và số sân là duy nhất. `branch_managers` giới hạn một Manager mỗi chi nhánh và một chi nhánh mỗi Manager.
-- `bookings` nối User với sân. Unique index trên sân và giờ đang chiếm chỗ ngăn đặt trùng ngay cả khi hai yêu cầu đồng thời. Lịch hủy và hết hạn được giữ để tra lịch sử.
-- `payments` có một khoản cần thu trên mỗi booking và mã thanh toán duy nhất. `payment_receipts.sepay_id` chống ghi nhận một giao dịch hai lần. Thông báo duy nhất theo cặp sự kiện và người nhận.
-- `pricing_policies` duy nhất theo chi nhánh và ngày hiệu lực. Hai schema dùng ID tham chiếu logic qua gRPC, còn booking lưu giá đã chốt để lần đổi giá tiếp theo không đổi lịch cũ.
-- MySQL lưu mốc đặt sân theo UTC và React hiển thị theo giờ Việt Nam. Compose khởi tạo hai tài khoản DB riêng cho Booking và Pricing.
+## Quy tắc nghiệp vụ
 
-## Lỗi và điểm đã sửa
+- Giữ sân tối đa 10 phút hoặc đến giờ bắt đầu, tùy mốc nào sớm hơn.
+- Báo giá qua gRPC là tổng giá. `payment.amountVnd` là cọc 50% làm tròn lên một VND; `balanceAmountVnd` là khoản còn lại.
+- Khoản còn lại thu trực tiếp tại sân; staff xác nhận sau khi thực tế nhận tiền. Lưu người thu và thời điểm thu. Đây là phương án triển khai khoản còn lại của bản này.
+- Check-in trước hạn giờ bắt đầu +10 phút. NoShow giữ tiền cọc, không thu khoản còn lại. Worker tạo thông báo. Không tự hoàn tiền.
+- Lịch CheckedIn có thể chuyển Completed khi hết giờ dù khoản còn lại chưa thu; staff vẫn có thể ghi nhận khoản thu sau đó.
+- Mỗi chi nhánh mới có tối đa ba sân. Dữ liệu sân số lớn hơn ba từ bản cũ được lưu trữ để giữ lịch sử, không được bật lại.
 
-| Phát hiện | Cách xử lý |
-|---|---|
-| Slot hết hạn có thể còn bị chặn cho tới chu kỳ Worker tiếp theo | Danh sách giờ trống bỏ qua giữ chỗ hết hạn. API đặt lại khóa lịch cũ, giải phóng lịch và payment rồi tạo lượt giữ mới trong cùng transaction. |
-| Cấu hình demo hiển thị QR của tài khoản giả. Khi thiếu cấu hình, API vẫn có thể giữ sân | Demo hiện trạng thái giao dịch mô phỏng và không tạo QR chuyển khoản. Thiếu cấu hình thanh toán trả HTTP 503 trước khi tạo lượt giữ. |
-| Đổi ngày hoặc giờ có thể thấy giá của lựa chọn cũ trong lúc tải | Dữ liệu hiển thị gắn với lựa chọn hiện tại. Nếu API trả 409 vì người khác đặt trước, giao diện tải lại giờ trống. |
-| Đăng nhập từ bước đặt sân làm mất lựa chọn | Giữ chi nhánh, sân, ngày và giờ qua bước đăng nhập. Khi phiên hết hạn, giao diện đưa về màn hình đăng nhập. |
-| Theo dõi thanh toán có thể dừng sau lỗi mạng, thông báo giới hạn ở trang đầu | Trang chi tiết thử tải lại khi lỗi mạng hoặc lỗi server. Thông báo có phân trang. |
-| Công cụ kiểm tra phụ thuộc báo cảnh báo Vite và MySqlConnector | Cập nhật Vite lên 6.4.6 và MySqlConnector lên 2.6.1. |
+## Kiến trúc và ERD
 
-## Giới hạn của bản demo
+Compose có sáu dịch vụ: web, api, pricing, worker, mysql, redis. Booking API dùng Api → Services → Repositories → EF Core. Pricing dùng hợp đồng `pricing.proto` qua gRPC-Web. Render có thể chạy Pricing trong tiến trình riêng và Worker trong API container; database vẫn tách hai schema.
 
-- Webhook đã kiểm tra bằng giao dịch giả. Chưa xác minh giao dịch SePay Live hoặc chuyển tiền thật.
-- Giao dịch sai số tiền hoặc đến muộn cần Admin xử lý đối soát. Bản hiện tại chưa tự hoàn tiền hoặc hủy lịch đã thanh toán.
-- Kiểm thử đồng thời tập trung vào hai yêu cầu cùng slot. Chưa đo tải diện rộng.
-- Trước khi nộp, điền tên thành viên và phần việc thực tế trong README. Xem [checklist theo đề](CHECKLIST-DEMO.md).
+`booking_db` có chín bảng: users, branches, branchmanagers, pitches, bookings, payments, paymentreceipts, outboxmessages, notifications. `pricing_db` có pricingpolicies. Sau migration 07 có **10 bảng, 13 FK vật lý**. Ba tham chiếu logic là pricingpolicies.branchId, bookings.pricingPolicyId và notifications.eventId. Chi tiết trong [database/README.md](database/README.md).
 
-## Giao diện
+## Giới hạn xác minh
 
-React dùng Lucide cho điều hướng, trạng thái và nút thao tác. Trang tìm sân có ảnh hero WebP trong `SmartBooking-Football-FE/src/assets/pitch-hero.webp`. Ảnh tạo bằng ImageGen tích hợp với mô tả sân bóng mini ở Việt Nam lúc chạng vạng, đèn sân, khung thành và bóng bên phải, phần trái tối để đặt tiêu đề, không chữ hoặc logo.
-
-Prompt ảnh
-
-> Photorealistic wide 3:2 sports editorial hero photograph for a Vietnamese amateur football pitch booking website. Floodlit small-sided outdoor football pitch in Vietnam at blue hour, low sideline angle, crisp white markings and green artificial turf, subtle haze, field fence and distant trees, tasteful cinematic navy and forest green tones. Main goal and foreground football on right third, dark quiet negative space on left for website overlay. No people, text, signs, watermarks or logos. Realistic venue and premium local sports photography.
-
-## Kết quả kiểm thử
-
-| Phần | Kết quả |
-|---|---|
-| Admin | Tạo và cập nhật chi nhánh, thêm sân theo nhu cầu, gán Manager, ngừng hoạt động chi nhánh, xem giao dịch cần đối soát. |
-| Manager | Đăng nhập, chỉ thấy chi nhánh được gán, cập nhật trạng thái sân, CRUD bảng giá. Chi nhánh khác trả `403`. |
-| User | Đăng ký, đăng nhập, tìm kiếm và lọc danh sách, giữ sân, hủy giữ chỗ, xem lịch và đánh dấu thông báo đã đọc. User khác không xem hoặc hủy được booking. |
-| Giá gRPC | Kiểm tra giá ở đầu và cuối khung cao điểm, thay đổi giá, ngày hiệu lực trùng trả `409`. |
-| Booking và MySQL | Hai yêu cầu đồng thời vào cùng slot trả một `201` và một `409`. Đã xác minh hai schema và unique index chống trùng trên MySQL chạy thật. |
-| Thanh toán giả | Sai key trả `401`. Sai số tiền giữ nguyên booking. Webhook đúng chuyển `Confirmed/Paid`. Replay cùng mã giao dịch chỉ tạo một thông báo. |
-| Worker và Redis | Mở lại slot hết hạn, ghi nhận tiền đến muộn để đối soát, chuyển lịch đã qua giờ sang `Completed`, phát và nhận sự kiện qua Redis Streams. |
-| Trình duyệt | Chromium desktop hoàn thành chọn sân, giữ lựa chọn qua đăng nhập, tạo lịch, nhận xác nhận và xem thông báo. Bản mobile 390 px kiểm tra chọn sân và không tràn ngang. |
-| Build và phụ thuộc | Build .NET và frontend thành công. npm audit và kiểm tra NuGet sau cập nhật không báo gói dễ tổn thương theo nguồn hiện tại. Vite báo cảnh báo không chặn build về directive `use client` trong Lucide. |
+- Kiểm thử bằng dữ liệu QA local và webhook giả; chưa xác minh SePay Live, chuyển tiền thật hoặc tải diện rộng.
+- Database cloud hiện có phải chạy migration 07 trước khi deploy API/Worker mới. Không xem kết quả QA là bằng chứng đã nâng cấp Aiven/Render.
+- Build .NET, FE thường và FE mode Vercel thành công. `npm audit --omit=dev` không có cảnh báo. Full audit còn cảnh báo picomatch kéo theo fdir/tinyglobby/Vite; [advisory GHSA-fc5q-39xc-vjpf](https://github.com/advisories/GHSA-fc5q-39xc-vjpf) chưa có bản vá tại thời điểm kiểm tra. Đây là công cụ build, không nằm trong dependency runtime của web tĩnh. Không dùng `npm audit fix --force` để hạ Vite tự động.
+- Giao dịch sai hoặc đến muộn cần Admin đối soát. Bản này chưa tự hoàn tiền và chưa hủy booking đã thanh toán.

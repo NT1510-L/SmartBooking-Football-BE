@@ -1,17 +1,24 @@
 param(
     [long]$BookingId = 0,
-    [string]$Api = 'http://127.0.0.1:5045'
+    [string]$Api = 'http://127.0.0.1:5045',
+    [string]$EnvFile = "$PSScriptRoot/../.env"
 )
 
 $ErrorActionPreference = 'Stop'
-$config = ConvertFrom-StringData (Get-Content "$PSScriptRoot/../.env" -Raw)
-if ($Api -notin @('http://127.0.0.1:5045','http://localhost:5045') -or
-    $config.SEPAY_ACCOUNT_NUMBER -ne '0000000000' -or !$config.SEPAY_WEBHOOK_KEY) {
+$localApi = $null
+if (![Uri]::TryCreate($Api, [UriKind]::Absolute, [ref]$localApi) -or
+    $localApi.Scheme -ne 'http' -or $localApi.Host -notin @('127.0.0.1', 'localhost', '[::1]') -or
+    $localApi.AbsolutePath -ne '/' -or $localApi.UserInfo -or $localApi.Query -or $localApi.Fragment) {
+    throw 'Use an HTTP address on the local loopback interface.'
+}
+$apiBase = $localApi.GetLeftPart([UriPartial]::Authority)
+$config = ConvertFrom-StringData (Get-Content -LiteralPath $EnvFile -Raw)
+if ($config.SEPAY_ACCOUNT_NUMBER -ne '0000000000' -or !$config.SEPAY_WEBHOOK_KEY) {
     throw 'Use the local demo API with the fake SePay account and webhook key.'
 }
 
 function Invoke-BookingApi($method, $path, $body = $null, $headers = @{}) {
-    $options = @{ Uri = "$Api/api$path"; Method = $method; Headers = $headers }
+    $options = @{ Uri = "$apiBase/api$path"; Method = $method; Headers = $headers; MaximumRedirection = 0 }
     if ($null -ne $body) {
         $options.ContentType = 'application/json; charset=utf-8'
         $options.Body = ConvertTo-Json -InputObject $body -Compress
@@ -43,7 +50,13 @@ if ($BookingId -gt 0) {
     if (!$reply.success -or $result.booking.status -ne 'Confirmed' -or $result.payment.status -ne 'Paid') {
         throw 'The booking did not confirm. Check expiry and API logs.'
     }
-    [pscustomobject]@{ BookingId = $BookingId; BookingStatus = $result.booking.status; PaymentStatus = $result.payment.status }
+    [pscustomobject]@{
+        BookingId = $BookingId
+        BookingStatus = $result.booking.status
+        PaymentStatus = $result.payment.status
+        DepositAmountVnd = $result.payment.amountVnd
+        BalanceDueVnd = $result.payment.remainingAmountVnd
+    }
     return
 }
 

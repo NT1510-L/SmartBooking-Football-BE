@@ -6,18 +6,6 @@ services:
     ipAllowList: []
     maxmemoryPolicy: noeviction
 
-  # gRPC is internal-only. The public API is the only service exposed externally.
-  - type: pserv
-    runtime: docker
-    name: football-pricing
-    region: singapore
-    plan: free
-    dockerfilePath: ./Dockerfile.pricing
-    dockerContext: .
-    envVars:
-      - key: ConnectionStrings__Pricing
-        sync: false
-
   - type: web
     runtime: docker
     name: football-api
@@ -31,8 +19,14 @@ services:
         value: http://+:10000
       - key: ConnectionStrings__Booking
         sync: false
-      - key: Pricing__HostPort
-        fromService: { type: pserv, name: football-pricing, property: hostport }
+      - key: ConnectionStrings__Pricing
+        sync: false
+      - key: Pricing__RunLocal
+        value: "true"
+      - key: RunBookingWorker
+        value: "true"
+      - key: ConnectionStrings__Redis
+        fromService: { type: keyvalue, name: football-redis, property: connectionString }
       - key: Jwt__Key
         generateValue: true
       - key: BootstrapAdmin__Email
@@ -47,18 +41,3 @@ services:
         sync: false
       - key: Sepay__WebhookKey
         sync: false
-
-  - type: worker
-    runtime: docker
-    name: football-worker
-    region: singapore
-    plan: free
-    dockerfilePath: ./Dockerfile.api
-    dockerContext: .
-    envVars:
-      - key: RunMode
-        value: Worker
-      - key: ConnectionStrings__Booking
-        sync: false
-      - key: ConnectionStrings__Redis
-        fromService: { type: keyvalue, name: football-redis, property: connectionString }

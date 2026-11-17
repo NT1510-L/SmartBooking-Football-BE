@@ -94,6 +94,9 @@ public sealed class ManagementService(BookingRepository repo, PricingService.Pri
         if (!await repo.LockBranch(branchId, ct)) return Results.NotFound();
         if (!await Allowed(actor, branchId, ct)) return Results.Forbid();
 
+        if (await repo.Pitches.CountAsync(x => x.BranchId == branchId, ct) >= 3)
+            return Results.Conflict(new { message = "Mỗi chi nhánh có tối đa 3 sân. Bạn có thể sửa hoặc bật lại sân đã có." });
+
         var pitch = new Pitch
         {
             BranchId = branchId,
@@ -113,6 +116,8 @@ public sealed class ManagementService(BookingRepository repo, PricingService.Pri
         var pitch = await repo.FindPitch(id, ct);
         if (pitch is null) return Results.NotFound();
         if (!await Allowed(actor, pitch.BranchId, ct)) return Results.Forbid();
+        if (input.IsActive && pitch.PitchNumber > 3)
+            return Results.Conflict(new { message = "Sân lưu trữ có số lớn hơn 3 phải giữ trạng thái ngưng hoạt động." });
         pitch.Name = input.Name;
         pitch.IsActive = input.IsActive;
         await repo.SaveChangesAsync(ct);
