@@ -23,8 +23,7 @@ var connectionOptions = new MySqlConnector.MySqlConnectionStringBuilder(connecti
     DateTimeKind = MySqlConnector.MySqlDateTimeKind.Utc
 };
 builder.Services.AddDbContext<BookingDb>(options =>
-    options.UseMySql(connectionOptions.ConnectionString, new MySqlServerVersion(new Version(8, 0, 46)),
-        mysql => mysql.EnableRetryOnFailure()));
+    options.UseMySql(connectionOptions.ConnectionString, new MySqlServerVersion(new Version(8, 0, 46))));
 builder.Services.AddScoped<BookingRepository>();
 if (config["RunMode"] == "Worker")
 {
@@ -35,6 +34,8 @@ if (config["RunMode"] == "Worker")
     await builder.Build().RunAsync();
     return;
 }
+if (config.GetValue<bool>("RunBookingWorker"))
+    builder.Services.AddHostedService<BookingWorker>();
 
 var key = config["Jwt:Key"];
 if (key is null || Encoding.UTF8.GetByteCount(key) < 32)
@@ -47,7 +48,13 @@ builder.Services.AddScoped<IPasswordHasher<Account>, PasswordHasher<Account>>();
 builder.Services.AddGrpcClient<PricingService.PricingServiceClient>(o =>
     o.Address = new Uri(config["Pricing:Address"]
         ?? (config["Pricing:HostPort"] is { Length: > 0 } hostPort ? $"http://{hostPort}" : "http://localhost:5081")))
-    .ConfigurePrimaryHttpMessageHandler(() => new GrpcWebHandler(GrpcWebMode.GrpcWeb, new HttpClientHandler()));
+    .ConfigurePrimaryHttpMessageHandler(() => new GrpcWebHandler(GrpcWebMode.GrpcWeb, new HttpClientHandler()))
+    .ConfigureChannel(options =>
+    {
+        // The internal Pricing listener uses gRPC-Web over HTTP without TLS.
+        options.HttpVersion = HttpVersion.Version11;
+        options.HttpVersionPolicy = HttpVersionPolicy.RequestVersionExact;
+    });
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(options =>
 {
     options.MapInboundClaims = false;

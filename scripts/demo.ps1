@@ -27,7 +27,7 @@ $login = Invoke-BookingApi POST '/auth/login' @{
 $admin = @{ Authorization = "Bearer $($login.token)" }
 
 if ($BookingId -gt 0) {
-    $detail = Invoke-BookingApi GET "/bookings/$BookingId" $null $admin
+    $detail = Invoke-BookingApi GET "/management/bookings/$BookingId" $null $admin
     if ($detail.booking.status -ne 'PendingPayment' -or !$detail.payment) {
         throw 'Choose a booking that is still waiting for payment.'
     }
@@ -39,7 +39,7 @@ if ($BookingId -gt 0) {
         transferType = 'in'
         transferAmount = $detail.payment.amountVnd
     } @{ Authorization = "Apikey $($config.SEPAY_WEBHOOK_KEY)" }
-    $result = Invoke-BookingApi GET "/bookings/$BookingId" $null $admin
+    $result = Invoke-BookingApi GET "/management/bookings/$BookingId" $null $admin
     if (!$reply.success -or $result.booking.status -ne 'Confirmed' -or $result.payment.status -ne 'Paid') {
         throw 'The booking did not confirm. Check expiry and API logs.'
     }

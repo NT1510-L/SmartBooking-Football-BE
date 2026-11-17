@@ -77,7 +77,7 @@ public sealed class BookingQueryService(BookingRepository repo, BookingService b
             (!actor.IsInRole("Manager") || !await repo.Manages(Id(actor), await repo.BranchOf(booking.PitchId, ct), ct)))
             return Results.Forbid();
         var payment = await repo.Payments.AsNoTracking().SingleOrDefaultAsync(x => x.BookingId == id, ct);
-        return Results.Ok(new { booking, payment = payment is null ? null : bookings.PaymentDetails(payment) });
+        return Results.Ok(new { booking, payment = payment is null ? null : bookings.PaymentDetails(payment, own ? booking.ExpiresAtUtc : null) });
     }
 
     public async Task<IResult> ListNotifications(ClaimsPrincipal actor, int? page, int? size, CancellationToken ct) =>

@@ -24,14 +24,31 @@ public sealed class BookingWorker(IServiceScopeFactory scopes, IConfiguration co
                 catch (Exception ex) when (!ct.IsCancellationRequested) { logger.LogError(ex, "Booking maintenance failed"); }
                 try
                 {
-                    redis ??= await ConnectionMultiplexer.ConnectAsync(config.GetConnectionString("Redis")
-                        ?? throw new InvalidOperationException("Set ConnectionStrings__Redis."));
+                    redis ??= await ConnectionMultiplexer.ConnectAsync(RedisOptions());
                     await ProcessStream(redis.GetDatabase(), ct);
                 }
                 catch (Exception ex) when (!ct.IsCancellationRequested) { logger.LogError(ex, "Redis booking processing failed"); }
             } while (await timer.WaitForNextTickAsync(ct));
         }
         finally { redis?.Dispose(); }
+    }
+
+    private ConfigurationOptions RedisOptions()
+    {
+        var connection = config.GetConnectionString("Redis")
+            ?? throw new InvalidOperationException("Set ConnectionStrings__Redis.");
+        if (!Uri.TryCreate(connection, UriKind.Absolute, out var uri) || uri.Scheme is not ("redis" or "rediss"))
+            return ConfigurationOptions.Parse(connection);
+
+        var options = new ConfigurationOptions { Ssl = uri.Scheme == "rediss" };
+        options.EndPoints.Add(uri.IdnHost, uri.IsDefaultPort ? 6379 : uri.Port);
+        var credentials = uri.UserInfo.Split(':', 2);
+        if (credentials.Length == 2)
+        {
+            options.User = Uri.UnescapeDataString(credentials[0]);
+            options.Password = Uri.UnescapeDataString(credentials[1]);
+        }
+        return options;
     }
 
     private async Task UpdateBookings(CancellationToken ct)

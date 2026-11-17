@@ -9,7 +9,7 @@ using Football_Booking.Repositories;
 
 namespace Football_Booking.Services;
 
-public sealed record BookingInput(long PitchId, DateOnly Date, int Hour);
+public sealed record BookingInput(long PitchId, DateOnly Date, int Hour, long? ExpectedAmountVnd = null);
 public sealed record SepayEvent(long Id, string? AccountNumber, string? Code, string? Content, string? TransferType, long TransferAmount);
 public sealed record PaymentView(string Code, long AmountVnd, string Status, string? QrUrl, bool IsDemo);
 
@@ -28,12 +28,13 @@ public sealed class BookingService(BookingRepository repo, PricingService.Pricin
             BranchId = branchId, LocalDate = date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), Hour = hour
         }, deadline: DateTime.UtcNow.AddSeconds(15), cancellationToken: ct);
 
-    public PaymentView PaymentDetails(Payment payment)
+    public PaymentView PaymentDetails(Payment payment, DateTime? expiresAtUtc)
     {
         var account = config["Sepay:AccountNumber"];
         var bank = config["Sepay:Bank"];
         var isDemo = account == DemoAccount;
-        var qr = payment.Status == "Pending" && !isDemo && !string.IsNullOrWhiteSpace(account) && !string.IsNullOrWhiteSpace(bank)
+        var qr = payment.Status == "Pending" && expiresAtUtc > DateTime.UtcNow &&
+            !isDemo && !string.IsNullOrWhiteSpace(account) && !string.IsNullOrWhiteSpace(bank)
             ? $"https://vietqr.app/img?acc={Uri.EscapeDataString(account)}&bank={Uri.EscapeDataString(bank)}&amount={payment.AmountVnd}&des={Uri.EscapeDataString(payment.Code)}"
             : null;
         return new PaymentView(payment.Code, payment.AmountVnd, payment.Status, qr, isDemo);
@@ -43,6 +44,8 @@ public sealed class BookingService(BookingRepository repo, PricingService.Pricin
     {
         if (input.Hour is < 0 or > 23 || input.Date.Year < 1000 || input.Date.Year > 9998)
             return Results.BadRequest(new { message = "Khung giờ không hợp lệ." });
+        if (input.ExpectedAmountVnd is <= 0)
+            return Results.BadRequest(new { message = "Giá xác nhận phải lớn hơn 0." });
         if (string.IsNullOrWhiteSpace(config["Sepay:AccountNumber"]) ||
             string.IsNullOrWhiteSpace(config["Sepay:Bank"]) ||
             string.IsNullOrWhiteSpace(config["Sepay:WebhookKey"]))
@@ -59,6 +62,13 @@ public sealed class BookingService(BookingRepository repo, PricingService.Pricin
         var expiry = now.AddMinutes(10);
         if (start < expiry) expiry = start;
         if (expiry <= now) return Results.Conflict(new { message = "Khung giờ đã qua." });
+        if (input.ExpectedAmountVnd is { } expected && expected != quote.Amount)
+            return Results.Conflict(new
+            {
+                code = "PriceChanged",
+                message = "Giá sân đã thay đổi. Vui lòng xác nhận giá mới.",
+                amountVnd = quote.Amount
+            });
 
         await using var tx = await repo.BeginTransactionAsync(ct);
         var previousHoldId = await repo.Bookings.Where(x => x.PitchId == pitch.Id && x.StartAtUtc == start &&
@@ -82,7 +92,7 @@ public sealed class BookingService(BookingRepository repo, PricingService.Pricin
         await repo.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
         logger.LogInformation("Created pending booking {BookingId}", booking.Id);
-        return Results.Created($"/api/bookings/{booking.Id}", new { booking, payment = PaymentDetails(payment) });
+        return Results.Created($"/api/bookings/{booking.Id}", new { booking, payment = PaymentDetails(payment, booking.ExpiresAtUtc) });
     }
 
     public async Task<IResult> Cancel(long id, long actorId, string role, CancellationToken ct)
@@ -94,10 +104,13 @@ public sealed class BookingService(BookingRepository repo, PricingService.Pricin
             (role != "Manager" || !await repo.Manages(actorId, await repo.BranchOf(booking.PitchId, ct), ct)))
             return Results.Forbid();
         if (booking.Status == "Cancelled") return Results.NoContent();
-        if (booking.Status != "PendingPayment" || booking.StartAtUtc <= DateTime.UtcNow)
+        var now = DateTime.UtcNow;
+        if (booking.Status != "PendingPayment")
             return Results.Conflict(new { message = "Chỉ hủy trực tiếp lịch đang chờ thanh toán." });
+        if (booking.ExpiresAtUtc is not { } expires || expires <= now || booking.StartAtUtc <= now)
+            return Results.Conflict(new { message = "Lượt giữ sân đã hết hạn." });
         booking.Status = "Cancelled";
-        booking.CancelledAtUtc = DateTime.UtcNow;
+        booking.CancelledAtUtc = now;
         booking.CancelledByUserId = actorId;
         var payment = await repo.Payments.SingleAsync(x => x.BookingId == id, ct);
         payment.Status = "Cancelled";

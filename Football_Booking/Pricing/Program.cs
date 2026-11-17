@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Net;
 using Grpc.Core;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.EntityFrameworkCore;
@@ -6,8 +7,14 @@ using SmartBooking.Pricing;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Configuration.AddJsonFile("appsettings.Development.Local.json", optional: true, reloadOnChange: true);
-builder.WebHost.ConfigureKestrel(options => options.ListenAnyIP(
-    builder.Configuration.GetValue("PricingPort", 5081), endpoint => endpoint.Protocols = HttpProtocols.Http1AndHttp2));
+var port = builder.Configuration.GetValue<int?>("PricingPort") ?? builder.Configuration.GetValue("PORT", 5081);
+builder.WebHost.ConfigureKestrel(options =>
+{
+    if (builder.Configuration.GetValue<bool>("PricingLoopbackOnly"))
+        options.Listen(IPAddress.Loopback, port, endpoint => endpoint.Protocols = HttpProtocols.Http1);
+    else
+        options.ListenAnyIP(port, endpoint => endpoint.Protocols = HttpProtocols.Http1);
+});
 var connection = ResolveMySqlConnection(builder.Configuration);
 builder.Services.AddDbContext<PricingDb>(options => options.UseMySql(connection,
     new MySqlServerVersion(new Version(8, 0, 46)), mysql => mysql.EnableRetryOnFailure()));

@@ -16,7 +16,7 @@ flowchart LR
     Redis -->|Đọc sự kiện| Worker
 ```
 
-Backend dùng ASP.NET Core .NET 8, EF Core/Pomelo, MySQL, gRPC và StackExchange.Redis. Booking API gọi Pricing qua hợp đồng [pricing.proto](Football_Booking/pricing.proto). Worker chạy thành tiến trình riêng từ cùng image Booking API. Worker đọc outbox để phát sự kiện, nhận sự kiện để tạo thông báo, hết hạn giữ chỗ và hoàn tất lịch đã qua giờ.
+Backend dùng ASP.NET Core .NET 8, EF Core/Pomelo, MySQL, gRPC và StackExchange.Redis. Booking API gọi Pricing qua hợp đồng [pricing.proto](Football_Booking/pricing.proto). Trong Docker Compose, Worker chạy thành tiến trình riêng từ cùng image Booking API. Worker đọc outbox để phát sự kiện, nhận sự kiện để tạo thông báo, hết hạn giữ chỗ và hoàn tất lịch đã qua giờ.
 
 Booking API tổ chức theo ba lớp trong project `Football_Booking/Football_Booking`:
 
@@ -28,11 +28,13 @@ Booking API tổ chức theo ba lớp trong project `Football_Booking/Football_B
 
 Ví dụ, `POST /api/bookings` đi qua `Endpoints` → `BookingService.Create` → `BookingRepository` → `BookingDb` → MySQL.
 
+Frontend gửi `expectedAmountVnd` là giá khách vừa xem. Nếu Pricing Service trả giá khác, API trả `409` với `code: "PriceChanged"` và `amountVnd` để khách xác nhận trước khi giữ sân. Trường này là tùy chọn cho các client cũ.
+
 ## Chạy bằng Docker Compose
 
 1. Đặt hai repo cạnh nhau với tên `SmartBooking-Football-BE` và `SmartBooking-Football-FE`.
 2. Từ repo backend, sao chép `.env.example` thành `.env`. Điền ba mật khẩu MySQL riêng, `JWT_KEY` ít nhất 32 byte và mật khẩu Admin ít nhất 8 ký tự. Dùng chuỗi hex ngẫu nhiên ít nhất 24 ký tự cho `BOOKING_DB_PASSWORD` và `PRICING_DB_PASSWORD`; PowerShell có thể tạo từng giá trị bằng `[guid]::NewGuid().ToString('N')`. Điền ba biến `SEPAY_*` khi tích hợp SePay. File `.env` được Git bỏ qua.
-3. Chạy `docker compose up --build -d`. Lần đầu MySQL chạy ba script schema và tạo tài khoản riêng cho từng database. Compose dùng volume riêng của dự án.
+3. Chạy `docker compose up --build -d`. Lần đầu MySQL chạy các script schema và dữ liệu demo, đồng thời tạo tài khoản riêng cho từng database. Compose dùng volume riêng của dự án.
 4. Mở React tại `http://localhost:5173` và Swagger tại `http://localhost:5045/swagger`. Trong Swagger, gọi `POST /api/auth/login` rồi dán trường `token` vào nút **Authorize**.
 
 ## Deploy cloud bằng Render
