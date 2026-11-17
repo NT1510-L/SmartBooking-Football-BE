@@ -66,7 +66,18 @@ public sealed class BookingWorker(IServiceScopeFactory scopes, IConfiguration co
             await tx.CommitAsync(ct);
             logger.LogInformation("Expired booking {BookingId}", id);
         }
-        var completed = await repo.Bookings.Where(x => x.Status == "Confirmed" && x.EndAtUtc <= now)
+        var checkInDeadline = now.AddMinutes(-10);
+        var absent = await repo.Bookings.Where(x => x.Status == "Confirmed" && x.CheckedInAtUtc == null && x.StartAtUtc <= checkInDeadline)
+            .OrderBy(x => x.StartAtUtc).Select(x => x.Id).Take(50).ToListAsync(ct);
+        foreach (var id in absent)
+        {
+            await using var tx = await repo.BeginTransactionAsync(ct);
+            var booking = await repo.Lock(id, ct);
+            if (booking is null || !await repo.MarkNoShow(booking, now, ct)) continue;
+            await tx.CommitAsync(ct);
+            logger.LogInformation("Marked no-show booking {BookingId}", id);
+        }
+        var completed = await repo.Bookings.Where(x => x.Status == "CheckedIn" && x.EndAtUtc <= now)
             .ExecuteUpdateAsync(s => s.SetProperty(x => x.Status, "Completed"), ct);
         if (completed > 0) logger.LogInformation("Completed {Count} bookings", completed);
     }
@@ -100,9 +111,12 @@ public sealed class BookingWorker(IServiceScopeFactory scopes, IConfiguration co
             var userId = payload.RootElement.GetProperty("UserId").GetInt64();
             var eventId = values["event_id"].ToString();
             var bookingId = (long)values["booking_id"];
-            var message = values["type"] == "BookingConfirmed"
-                ? $"Thanh toán thành công. Lịch đặt #{bookingId} đã xác nhận."
-                : $"Lịch đặt #{bookingId} đã hủy.";
+            var message = values["type"].ToString() switch
+            {
+                "BookingConfirmed" => $"Thanh toán thành công. Lịch đặt #{bookingId} đã xác nhận.",
+                "BookingNoShow" => $"Lịch đặt #{bookingId} không được check-in trong 10 phút sau giờ bắt đầu và đã chuyển sang không đến sân.",
+                _ => $"Lịch đặt #{bookingId} đã hủy."
+            };
             await repo.AddNotification(userId, bookingId, eventId, message, ct);
             await stream.StreamAcknowledgeAsync(Stream, Group, entry.Id);
             logger.LogInformation("Consumed {EventId} for booking {BookingId}", eventId, bookingId);

@@ -4,7 +4,7 @@
 
 ## 0. Tạo database Aiven
 
-Tạo một dịch vụ **Aiven for MySQL**. Trong **Connect → Databases**, tạo hai database: `booking_db` và `pricing_db`. Từ Workbench, chạy lần lượt `database/01-booking.sql` đến `database/06-demo-data.sql` theo đúng thứ tự.
+Tạo một dịch vụ **Aiven for MySQL**. Trong **Connect → Databases**, tạo hai database: `booking_db` và `pricing_db`. Từ Workbench, chạy lần lượt `database/01-booking.sql` đến `database/07-deposit-check-in.sql` theo đúng thứ tự.
 
 Lấy `Host`, `Port`, `User`, `Password` ở Aiven Overview và tạo hai connection string sau (đổi các giá trị trong `<...>`):
 
@@ -37,7 +37,7 @@ Nếu báo giá trả `503`, xem log của web service để phân biệt lỗi 
 
 1. Push repo `SmartBooking-Football-FE` lên GitHub.
 2. Trong project frontend trên Vercel, mở **Settings → Environment Variables**.
-3. Đặt `VITE_API_BASE_URL` thành URL Booking API ở bước 1, rồi redeploy frontend.
+3. Cập nhật destination của rewrite /api trong vercel.json thành URL Booking API ở bước 1, rồi deploy frontend. Vercel dùng build mode vercel để frontend gọi API cùng domain.
 4. Sau khi frontend online, quay lại service `football-api` → **Environment**, cập nhật `Web__Origin` thành URL frontend, chọn **Save and deploy**. Việc này cho phép CORS đúng một origin.
 
 ## 3. SePay thật
@@ -52,3 +52,9 @@ Chọn API Key có giá trị trùng `Sepay__WebhookKey`. Khi chưa có key, gia
 
 - Khi web service Free ngủ, Pricing và Worker trong cùng container cũng tạm dừng. Chế độ Docker Compose vẫn chạy Booking API, Pricing và Worker thành các service riêng cho demo local.
 - Aiven giữ database độc lập với Render, vì vậy redeploy API không ảnh hưởng dữ liệu. Chạy script migration mới trên Aiven Workbench trước khi deploy code phụ thuộc migration đó.
+
+## Migration cho bản cọc 50%
+
+Áp dụng database/07-deposit-check-in.sql trên booking_db trước khi deploy API/Worker mới. Script giữ payment cũ như khoản đã thu toàn bộ, bổ sung số tiền còn lại cho booking mới và thông tin check-in. Kiểm tra Swagger có hai endpoint check-in và collect-balance.
+
+Giá báo qua gRPC là tổng giá sân. Khi tạo booking mới, payment.amountVnd là tiền cọc 50%, balanceAmountVnd là khoản còn lại thu tại sân. Kiểm tra cả hai trường khi đối chiếu số tiền.

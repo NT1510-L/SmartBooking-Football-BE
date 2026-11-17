@@ -75,6 +75,12 @@ public static class Endpoints
         ops.MapGet("/bookings/{id:long}", (BookingQueryService service, long id, ClaimsPrincipal actor, CancellationToken ct) =>
             service.GetBooking(id, actor, ct))
             .WithTags("Manager/Admin - Bookings");
+        ops.MapPost("/bookings/{id:long}/check-in", (BookingService service, long id, ClaimsPrincipal actor, CancellationToken ct) =>
+            service.CheckIn(id, Id(actor), actor.FindFirstValue("role")!, ct))
+            .WithTags("Manager/Admin - Bookings");
+        ops.MapPost("/bookings/{id:long}/collect-balance", (BookingService service, long id, ClaimsPrincipal actor, CancellationToken ct) =>
+            service.CollectBalance(id, Id(actor), actor.FindFirstValue("role")!, ct))
+            .WithTags("Manager/Admin - Bookings");
         var managerBranches = ops.MapGroup("/branches").WithTags("Manager/Admin - Branches");
         managerBranches.MapGet("", (ManagementService service, ClaimsPrincipal actor, CancellationToken ct) =>
             service.ListManagedBranches(actor, ct));

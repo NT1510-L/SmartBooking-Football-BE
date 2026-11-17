@@ -50,7 +50,13 @@ if ($BookingId -gt 0) {
     if (!$reply.success -or $result.booking.status -ne 'Confirmed' -or $result.payment.status -ne 'Paid') {
         throw 'The booking did not confirm. Check expiry and API logs.'
     }
-    [pscustomobject]@{ BookingId = $BookingId; BookingStatus = $result.booking.status; PaymentStatus = $result.payment.status }
+    [pscustomobject]@{
+        BookingId = $BookingId
+        BookingStatus = $result.booking.status
+        PaymentStatus = $result.payment.status
+        DepositAmountVnd = $result.payment.amountVnd
+        BalanceDueVnd = $result.payment.remainingAmountVnd
+    }
     return
 }
 

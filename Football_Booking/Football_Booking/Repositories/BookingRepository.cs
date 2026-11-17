@@ -60,6 +60,21 @@ public sealed class BookingRepository(BookingDb db)
         return true;
     }
 
+    // The caller holds the booking lock so check-in and the Worker agree on the deadline.
+    public async Task<bool> MarkNoShow(Booking booking, DateTime now, CancellationToken ct)
+    {
+        if (booking.Status != "Confirmed" || booking.CheckedInAtUtc.HasValue || booking.StartAtUtc.AddMinutes(10) > now)
+            return false;
+        booking.Status = "NoShow";
+        db.Outbox.Add(new Outbox
+        {
+            BookingId = booking.Id, EventType = "BookingNoShow",
+            Payload = System.Text.Json.JsonSerializer.Serialize(new { booking.UserId })
+        });
+        await db.SaveChangesAsync(ct);
+        return true;
+    }
+
     public Task<long> BranchOf(long pitchId, CancellationToken ct) =>
         db.Pitches.Where(x => x.Id == pitchId).Select(x => x.BranchId).SingleOrDefaultAsync(ct);
 
