@@ -37,7 +37,8 @@ public sealed class BookingWorker(IServiceScopeFactory scopes, IConfiguration co
     {
         var connection = config.GetConnectionString("Redis")
             ?? throw new InvalidOperationException("Set ConnectionStrings__Redis.");
-        if (!Uri.TryCreate(connection, UriKind.Absolute, out var uri) || uri.Scheme is not ("redis" or "rediss"))
+        if (!Uri.TryCreate(connection, UriKind.Absolute, out var uri) ||
+            uri.Scheme is not ("redis" or "rediss") || string.IsNullOrEmpty(uri.Host))
             return ConfigurationOptions.Parse(connection);
 
         var options = new ConfigurationOptions { Ssl = uri.Scheme == "rediss" };
