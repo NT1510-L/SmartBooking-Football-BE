@@ -41,10 +41,25 @@ services:
       - key: BootstrapAdmin__Password
         sync: false
       - key: Web__Origin
-        value: https://smart-booking-football-fe-git-liem-nguyn-thanh-liems-projects.vercel.app
+        value: https://smartbooking-liem-test-web.onrender.com
       - key: Sepay__Bank
         value: Sacombank
       - key: Sepay__AccountNumber
         value: "0000000000"
       - key: Sepay__WebhookKey
         sync: false
+
+  - type: web
+    runtime: static
+    name: smartbooking-liem-test-web
+    repo: https://github.com/NT1510-L/SmartBooking-Football-FE
+    branch: liem
+    buildCommand: npm ci && npm run build
+    staticPublishPath: ./dist
+    envVars:
+      - key: VITE_API_BASE_URL
+        value: https://smartbooking-liem-test-api.onrender.com
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
